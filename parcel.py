@@ -33,9 +33,12 @@ class Parcel():
         self.owner = owner
 
         # -- PARCEL CHARACTERISTICS -- #
+        # Please note that the order of these attributes should be equal
+        # to the order of the columns in the csv file describing the parcels
         (self.unique_id, self.n_bathrooms, self.age, self.house_size,
          self.lot_size, self.new_home, self.post_firm,
-         self.flood_prob_100, self.flood_prob_500, self.coastal_front,
+         self.flood_prob_100, self.flood_prob_500,
+         self.coastal_front, self.prox_amen,
          self.dist_amen, self.dist_CBD, self.dist_hwy, self.dist_park,
          self.price) = parcel_chars.values
 

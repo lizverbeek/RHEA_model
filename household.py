@@ -140,10 +140,10 @@ class Household(Agent):
             # Compute utility in case of flood and in case of no flood
             U_flood = (spat_goods**self.prefs["spat"] *
                        comp_goods_fl**self.prefs["comp"] *
-                       prop.dist_amen**self.prefs["amen"])
+                       prop.prox_amen**self.prefs["amen"])
             U_no_flood = (spat_goods**self.prefs["spat"] *
                           comp_goods_nofl**self.prefs["comp"] *
-                          prop.dist_amen**self.prefs["amen"])
+                          prop.prox_amen**self.prefs["amen"])
 
             # Compute expected utility from U_flood and U_no_flood
             flood_prob = (0.01 if prop.flood_prob_100 else 0.002
@@ -236,7 +236,6 @@ class Household(Agent):
             highest_bidder (Household)  : Household agent with the highest bid
             highest_bid (float)         : Value of the highest bid
         """
-
         if highest_bid >= self.ask_price:
             # If bid is higher than ask price: successful trade
             self.model.register_transaction(self.property,

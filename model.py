@@ -216,7 +216,6 @@ class RHEA_Model(Model):
                      len(self.parcels))
         self.avg_rent_per_step = avg_price / self.yM / self.kY
 
-
     # ------------------------------------------------ #
     # -------------- TRADING FUNCTIONS --------------- #
     # ------------------------------------------------ #
