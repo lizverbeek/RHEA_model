@@ -20,11 +20,12 @@ from model import RHEA_Model
 years = 50                  # Number of years to run model for
 kY = 2                      # Number of timesteps per year
                             # (e.g. if kY = 2, every timestep equals half a year)
-steps = years * kY + 10
+steps = years * kY + 1
 runs = 10
 
 parcel_file = "Beaufort_parcels.csv"
 random_seeds = range(0, runs)
+
 
 for i, random_seed in enumerate(random_seeds):
     print("Run num", i, "with random seed", random_seed)

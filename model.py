@@ -243,7 +243,6 @@ class RHEA_Model(Model):
             # Select random "Inactive" households to become sellers
             # Avoid selecting households who have recently moved
             sellers = self.rng.choice(owners, n_sellers, replace=False)
-            print(sellers)
         elif mode == "Least utility":
             # Select sellers for which current house gives least utility
             util_owners = {hh: hh.compute_utility(hh.property) for hh in owners}
