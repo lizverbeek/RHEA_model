@@ -17,30 +17,38 @@ function to compute insurance premiums and coverage for this specific parcel.
 
 import numpy as np
 
+
 class Parcel():
     """Parcel class of the RHEA model. """
 
-    def __init__(self, model, owner, parcel_chars):
+    def __init__(self, model, parcel_chars):
         """Initialize a parcel object.
 
         Args:
             model           : RHEA_model containing the parcel
-            owner           : Owner of the property on this parcel
             parcel_chars    : Parcel characteristics from input data
         """
 
         self.model = model
-        self.owner = owner
+        self.N_sales = 0
 
         # -- PARCEL CHARACTERISTICS -- #
-        # Please note that the order of these attributes should be equal
-        # to the order of the columns in the csv file describing the parcels
-        (self.unique_id, self.n_bathrooms, self.age, self.house_size,
-         self.lot_size, self.new_home, self.post_firm,
+        # Extract relevant parcel characteristics (combined for all
+        # price estimation methods).
+        # Please note that the order of the columns in the provided
+        # CSV file should be equal to the order of variables given here
+        (self.unique_id, x, y, self.age, self.n_bathrooms, self.n_bedrooms,
+         self.house_size, self.lot_size, self.new_home, self.post_firm,
          self.flood_prob_100, self.flood_prob_500,
          self.coastal_front, self.prox_amen,
          self.dist_amen, self.dist_CBD, self.dist_hwy, self.dist_park,
          self.price) = parcel_chars.values
+
+        # For regression kriging:
+        # Store parcel coordinates as tuple
+        self.coords = (x, y)
+        # Combine flood plain indicators
+        self.dflood = self.flood_prob_100 + self.flood_prob_500
 
         # Compute insurance premium and coverage in case of flood
         if self.model.insurance:
@@ -48,30 +56,44 @@ class Parcel():
         else:
             self.IP = self.IC = 0
 
-    def get_hedonic_vars(self):
-        """Get property variables used in hedonic price estimation.
+    def get_prop_chars(self, method):
+        """Get property characteristics used in hedonic price estimation.
         
+        Args:
+            method                : Method used in hedonic function
+                                    Options: "Regression" or "Regression kriging"
         Returns:
-            hedonic_vars (list)     : List of hedonic function terms
+            prop_chars (list)     : List of hedonic function terms
         """
 
-        # Return (predetermined) relevant variables, and, where
-        # necessary: transformations of these variables.
-        hedonic_vars = [1,
-                        self.n_bathrooms, self.n_bathrooms**2,
-                        self.age, self.age**2,
-                        self.house_size, 1e-4*self.house_size**2,
-                        self.lot_size, self.lot_size**2,
-                        self.new_home, 
-                        self.post_firm, 
-                        self.flood_prob_100, 
-                        self.flood_prob_500, 
-                        self.coastal_front, 
-                        np.log(self.dist_amen), 
-                        np.log(self.dist_CBD), 
-                        np.log(self.dist_hwy), 
-                        np.log(self.dist_park)]
-        return hedonic_vars
+        if method == "Regression":
+            # Return relevant property characteristics for regression
+            prop_chars = [self.n_bathrooms, self.n_bathrooms**2,
+                          self.age, self.age**2,
+                          self.house_size, 1e-4*self.house_size**2,
+                          self.lot_size, self.lot_size**2,
+                          self.new_home,
+                          self.post_firm, 
+                          self.flood_prob_100,
+                          self.flood_prob_500,
+                          self.coastal_front,
+                          np.log(self.dist_amen),
+                          np.log(self.dist_CBD),
+                          np.log(self.dist_hwy),
+                          np.log(self.dist_park)]
+        
+        elif method == "Regression kriging":
+            # Return relevant property characteristics for regression kriging
+            prop_chars = [self.age,
+                          np.log(self.house_size),
+                          np.log(self.lot_size),
+                          self.n_bedrooms,
+                          self.dflood]
+
+        else:
+            raise ValueError("Invalid price method")
+
+        return prop_chars
 
     def set_insurance_values(self):
         """Compute the annual insurance premium for a property based on

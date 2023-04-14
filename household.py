@@ -32,10 +32,10 @@ from scipy.stats import truncnorm
 
 from mesa import Agent
 
-
 LOWER_BID_LIMIT = 0.8           # Lower limit of property_price/HH_budget
                                 #   ratio to select properties to bid on
 SPATIAL_PREFS = (0.3, 0.05)     # Household preferences for spatial goods
+
 
 class Household(Agent):
     """Household agent class of the RHEA model. """
@@ -45,10 +45,10 @@ class Household(Agent):
 
         Args:
             model (Model)           : Model object containing the household agent
-            coastal_prefs (tuple)   : Household preferences for coastal amenities
-                                      distribution (mean, std)
-            RP_bias (tuple)         : Flood risk perception bias
-                                      distribution (mean, std)
+            coastal_prefs (tuple)   : Distribution of household preferences
+                                      for coastal amenities (mean, std)
+            RP_bias (tuple)         : Distribution of flood risk perception bias
+                                      (mean, std)
         """
 
         super().__init__(model.next_id(), model)
@@ -73,7 +73,7 @@ class Household(Agent):
         pref_amen = self.model.rng_init.normal(coastal_prefs[0], coastal_prefs[1])
         self.prefs = {"spat": pref_spat,
                       "comp": 1 - pref_spat,
-                      "amen": pref_amen}
+                      "coast": pref_amen}
 
         # Risk perception bias
         self.RP_bias = self.model.rng_init.normal(RP_bias[0], RP_bias[1])
@@ -140,10 +140,10 @@ class Household(Agent):
             # Compute utility in case of flood and in case of no flood
             U_flood = (spat_goods**self.prefs["spat"] *
                        comp_goods_fl**self.prefs["comp"] *
-                       prop.prox_amen**self.prefs["amen"])
+                       prop.prox_amen**self.prefs["coast"])
             U_no_flood = (spat_goods**self.prefs["spat"] *
                           comp_goods_nofl**self.prefs["comp"] *
-                          prop.prox_amen**self.prefs["amen"])
+                          prop.prox_amen**self.prefs["coast"])
 
             # Compute expected utility from U_flood and U_no_flood
             flood_prob = (0.01 if prop.flood_prob_100 else 0.002
@@ -169,16 +169,17 @@ class Household(Agent):
             # Update property price
             self.property.price = self.ask_price
 
-    def get_affordable(self, properties):
+    def get_affordable(self, properties, lower_limit=True):
         """Get affordable properties based on household budget.
 
         Args:
             properties (list)       : List of available properties
+            lower_limit (Boolean)   : If TRUE, select properties above lower limit
         Returns:
             props_afford (list)     : List of properties within budget range
         """
 
-        if LOWER_BID_LIMIT > 0:
+        if lower_limit:
             # Compare property prices to lower limit and household budget
             props_afford = filter(lambda prop:
                                   LOWER_BID_LIMIT <= prop.price/self.budget <= 1,
@@ -239,11 +240,12 @@ class Household(Agent):
         if highest_bid >= self.ask_price:
             # If bid is higher than ask price: successful trade
             self.model.register_transaction(self.property,
+                                            self.unique_id,
+                                            highest_bidder.unique_id,
                                             self.ask_price,
                                             highest_bid,
                                             highest_bid)
-            self.transfer_property(highest_bidder, self.property,
-                                   self.model.F_leaving)
+            self.transfer_property(highest_bidder, self.property)
         else:
             diff = self.ask_price - highest_bid
             D_neg_buyer = self.model.avg_rent_per_step
@@ -254,36 +256,38 @@ class Household(Agent):
             if self.bids_received and diff <= D_neg_buyer:
                 # Buyer accepts higher ask price
                 self.model.register_transaction(self.property,
+                                                self.unique_id,
+                                                highest_bidder.unique_id,
                                                 self.ask_price,
                                                 highest_bid,
                                                 self.ask_price)
-                self.transfer_property(highest_bidder, self.property,
-                                       self.model.F_leaving)
+                self.transfer_property(highest_bidder, self.property)
             
             # If seller received only one offer: seller reconsiders
             elif not self.bids_received and diff <= D_neg_seller:
                 # Seller accepts lower bid price
                 self.model.register_transaction(self.property,
+                                                self.unique_id,
+                                                highest_bidder.unique_id,
                                                 self.ask_price,
                                                 highest_bid,
                                                 highest_bid)
-                self.transfer_property(highest_bidder, self.property,
-                                       self.model.F_leaving)
+                self.transfer_property(highest_bidder, self.property)
             else:
                 # Unsuccessful attempt for seller and highest bidder
                 self.n_tr_nosuccess += 1
                 highest_bidder.n_tr_nosuccess += 1
 
-    def transfer_property(self, buyer, prop, F_leaving):
+    def transfer_property(self, buyer, prop):
         """Transfer a property from the current owner (self) to a buyer.
 
         Args:
             buyer (Household)   : Buyer to transfer property to
             prop (Parcel)       : Parcel object to transfer
-            F_leaving (float)   : Fraction of sellers leaving town after selling
         """
 
         # Transfer house to new owner
+        prop.N_sales += 1
         prop.owner = buyer
         buyer.property = prop
         self.property = None
@@ -295,7 +299,7 @@ class Household(Agent):
         buyer.moving_wait_time = self.model.not_moving_steps
 
         # Sellers lave town with 70% probability, otherwise become buyers
-        if self.model.rng.random() < F_leaving:
+        if self.model.rng.random() < self.model.F_leaving:
             self.model.remove_household(self)
             del self
         else:
@@ -338,9 +342,8 @@ class Household(Agent):
             if props:
                 # Get random subset of affordable properties
                 if len(props) > self.model.market_subset:
-                    props = self.model.rng.choice(props,
-                                                      self.model.market_subset,
-                                                      replace=False)
+                    props = self.model.rng.choice(props, self.model.market_subset,
+                                                  replace=False)
                 # Find best property and place bid
                 self.desired_prop = self.find_best_prop(props)
                 bid = self.place_bid(self.desired_prop.price)
