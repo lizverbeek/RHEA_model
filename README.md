@@ -20,17 +20,29 @@ pip install -r requirements.txt
 
 **Usage instructions** To run the RHEA model, run the `run.py` file. In this file, the user can specify
 - `years`: Number of years to run the RHEA model for
-- `kY`: Number of timesteps per years (e.g. if `kY = 2`, each step spans a period of half a year)
+- `kY`: Number of timesteps per year (e.g. if `kY = 2`, each step spans a period of half a year)
 - `runs`: Number of model replications
-- `parcel_file`: CSV file containing parcel information
+- `parcel_file`: CSV file containing parcel information. Column names should match the variables used in the specified price estimation and utility methods. For naming conventions, see attached example file `Parcel_chars.csv` or check the input lists specified in `parcel.py`.
 
-If desired, the input parameters of the RHEA model can also be varied from the run file.\
+If desired, the input parameters of the RHEA model can also be varied directly in the run file.\
 Input parameters include:
-- `new_buyer_coef`: Ratio of new buyers vs. new sellers every timestep
-- `HH_coastal_prefs` (mean, std): Distribution of household preference for coastal amenities
-- `HH_RP_bias` (mean, std): Distribution of household risk perception bias
+- `F_sale` (mean, std): Fraction of properties becoming available each timestep. This may vary per region of interest. Default: (0.25, 0.02)
+- `HH_coastal_prefs` (mean, std): Distribution of household preference for coastal amenities. Default: (0.5, 0.05)
+- `HH_RP_bias` (mean, std): Distribution of household risk perception bias. Default: (0, 0)
 - `update_hedonics`: Boolean indicating if hedonic price estimation function parameters should be updated every timestep or not
-- `seller_mode` ("Random" or "Least utility"): Indicates whether each timesteps households who will try to sell are selected randomly or based on their utility.
+- `price_method`: Method to estimate property prices from transaction history. Options:
+  - `regression`: Estimate property prices from historical transactions using a regression model, following the approach in [[1]](#1)
+  - `regression kriging`: Estimate property prices from historical transactions using kriging, following the approach in [[3]](#2)
+- `buyer_util_method`: Method to compute utility of properties for buyers to decide which property to bid on. Options:
+  - `EU_v1`: expected utility based on preferences for spatial vs. composite goods and coastal amenities, following [[1]](#1).
+  - `EU_v2`: expected utility based on, following [[3]](#3).
+  - `PTnull`: utility function based on Prospect Theory; baseline, as described in [[[3]](#3).
+  - `PT0`: utility function based on Prospect Theory, where the reference point is no floods experienced during residence.
+  - `PT1`: Prospect Theory; reference point = single flood experienced during residence.
+  - `PT3`: Prospect Theory: reference point = three floods experienced during residence.
+- `seller_mode`: indicates how sellers are selected. Options:
+  - `Random`: Sellers are selected randomly.
+  - Least utility`: sellers are households with least utility in their current house.
 
 ### Notes
 The RHEA model is still under active development, further improvements, additions and structural changes can be expected in the near future.
