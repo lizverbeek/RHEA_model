@@ -31,10 +31,9 @@ from household import Household
 from parcel import Parcel
 from realtor import Realtor
 
-
 YEARS_MORTGAGE = 30         # Mortgage duration (years)
 TRAVEL_COSTS = 0.284        # Travel costs per unit of distance
-F_SALE_DIST = (0.25, 0.02)  # Fraction of houses for sale per timestep (mean, std)
+NEW_BUYER_COEF = 0.7        # Additional buyer/seller ratio parameter
 F_INCOME = 0.3              # Max fraction of income spent on housin
 F_LEAVING = 0.7             # Fraction of sellers leaving area after sale
 F_FLOOD_DAMAGE = 0.15       # Percentage of house value damaged in case of flood
@@ -57,29 +56,31 @@ def count_by_status(model, market_status):
 class RHEA_Model(Model):
     """Model class for the RHEA model. """
 
-    def __init__(self, random_seed, parcel_file, kY=2, new_buyer_coef=0.7,
+    def __init__(self, random_seed, parcel_file, kY=2, F_sale=(0.25, 0.02),
                  HH_coastal_prefs=(0.5, 0.05), HH_RP_bias=(0, 0),
                  update_hedonics=True, price_method="regression",
-                 seller_mode="Least utility", insurance=False):
+                 buyer_util_method="EU_v1", seller_mode="Random"):
         """Initialization of the RHEA model.
 
         Args:
-            random_seed (int)         : Seed value for random number generation
-            parcel_file (string)      : Path to csv file with parcel attributes
-            kY (int)                  : Timesteps per year
-            new_buyer_coef (float)    : Ratio between newcoming buyers and sellers
-            HH_coastal_prefs (tuple)  : Distribution of household preferences
-                                        for coastal amenities (mean, std)
-            HH_RP_bias (tuple)        : Distribution of household risk perception
-                                        bias (mean, std)
-            update_hedonics (boolean) : Indicates whether parameters of hedonic
-                                        function are updated every timestep
-            price_method (string)     : Method used in hedonic function
-                                        Options: "regression" or "Regression kriging"
-            seller_mode (string0      : Mode to select households who decide to sell
-                                        Options: "Random" or "Least utility"
-            insurance (boolean)       : Indicates whether households in flood
-                                        zone can have flood insurance
+            random_seed (int)          : Seed value for random number generation
+            parcel_file (string)       : Path to csv file with parcel attributes
+            kY (int)                   : Timesteps per year
+            F_sale (tuple)             : Distribution of fraction of houses
+                                         becoming available each timestep
+            HH_coastal_prefs (tuple)   : Distribution of household preferences
+                                         for coastal amenities (mean, std)
+            HH_RP_bias (tuple)         : Distribution of household risk perception
+                                         bias (mean, std)
+            update_hedonics (boolean)  : Indicates whether parameters of hedonic
+                                         function are updated every timestep
+            price_method (string)      : Method used in hedonic function
+                                         Options: "regression" or "Regression kriging"
+            buyer_util_method (string) : Method for computing utility of buyers
+                                         Options: "EU_v1", "EU_v2", "PTnull",
+                                                  "PT0", "PT1", "PT3"
+            seller_mode (string)       : Mode to select households who decide to sell
+                                         Options: "Random" or "Least utility"
         """
 
         # -- SCHEDULE INITIALIZATION -- #
@@ -99,13 +100,17 @@ class RHEA_Model(Model):
         # ------------------------------
 
         # -- INITIALIZATION -- #
+        # Save model setting
+        self.update_hedonics = update_hedonics
+        self.price_method = price_method
+        self.buyer_util_method = buyer_util_method
+
         # Initialize model parameters
         self.kY = kY
         self.seller_mode = seller_mode
-        self.insurance = insurance
-        self.new_buyer_coef = new_buyer_coef
+        self.new_buyer_coef = NEW_BUYER_COEF
         self.yM = YEARS_MORTGAGE
-        self.F_sale = F_SALE_DIST
+        self.F_sale = F_sale
         self.F_income = F_INCOME
         self.F_leaving = F_LEAVING
         self.market_subset = MARKET_SUBSET
@@ -135,8 +140,6 @@ class RHEA_Model(Model):
         self.match_HH_props()
 
         # Initialize realtor and transaction history
-        self.update_hedonics = update_hedonics
-        self.price_method = price_method
         self.realtor = Realtor(self)
         self.schedule.add(self.realtor)
         self.transactions = {}
@@ -185,7 +188,9 @@ class RHEA_Model(Model):
                                                 if (type(a) == Household) and
                                                    (a.property is not None) else None),
                            "Coastal pref": (lambda a: a.prefs["coast"]
-                                            if type(a) == Household else None),
+                                            if (type(a) == Household) and
+                                                (a.model.buyer_util_method == "EU_v1")
+                                            else None),
                            "RP bias": (lambda a: a.RP_bias
                                        if type(a) == Household else None),
                            }

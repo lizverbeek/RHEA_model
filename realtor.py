@@ -78,14 +78,14 @@ class Realtor(Agent):
                                               m_regression.coef_)
 
             # Krige residuals from regression model
-            with suppress_stdout():  # Avoid printing output from PyKrige
+            with suppress_stdout():  # Avoid printing output from PyKrige library
                 self.m_kriging = RegressionKriging(regression_model=m_regression,
                                                    n_closest_points=10,
                                                    variogram_model="spherical")
                 self.m_kriging.fit(X, coords, np.log(Y))
 
         else:
-            raise ValueError("Invalid price method")
+            raise ValueError("Invalid price estimation method")
 
     def fit_price_model(self, steps, method):
         """Update regression coefficients for hedonic price estimation
@@ -111,6 +111,7 @@ class Realtor(Agent):
         results = sm.OLS(np.log(Y), sm.add_constant(X)).fit()
         # Check if all coefficients are significant
         if np.all(results.pvalues < 0.05):
+            print("Significant after", steps, "timesteps")
             # Update counter for saving number of timesteps used as history
             self.history_count = steps
             # Update regression coefficients
@@ -135,6 +136,8 @@ class Realtor(Agent):
             if not T - steps <= 0:
                 # Rerun price model fitting with more historical transactions
                 self.fit_price_model(steps + 1, method)
+            else:
+                print("No significant fit found")
 
     def estimate_prices(self, props, method):
         """Estimate property prices from hedonic analysis.
@@ -159,8 +162,9 @@ class Realtor(Agent):
             # Kriging part
             coords = np.array([prop.coords for prop in props])
             H = self.m_kriging.krige_residual(coords) + predict
+
         else:
-            raise ValueError("Invalid price method")
+            raise ValueError("Invalid price estimation method")
 
         # Round and avoid zero prices
         price_dict = dict(zip(props, np.maximum(1e2, np.round(np.exp(H), -2))))

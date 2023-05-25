@@ -32,9 +32,10 @@ from scipy.stats import truncnorm
 
 from mesa import Agent
 
-LOWER_BID_LIMIT = 0.8           # Lower limit of property_price/HH_budget
-                                #   ratio to select properties to bid on
+LOWER_BID_LIMIT = 0.8           # Lower limit of property_price/HH_budget ratio
 SPATIAL_PREFS = (0.3, 0.05)     # Household preferences for spatial goods
+NEIGHBORHOOD_PREFS = (1, 0.05)  # Household preferences for neighborhood quality
+LOSS_AVERSION = 2.25            # Loss aversion parameter used in Prospect Theory
 
 
 class Household(Agent):
@@ -71,9 +72,18 @@ class Household(Agent):
         # HH preferences of spatial over composite goods and coastal amenities
         pref_spat = self.model.rng_init.normal(SPATIAL_PREFS[0], SPATIAL_PREFS[1])
         pref_amen = self.model.rng_init.normal(coastal_prefs[0], coastal_prefs[1])
-        self.prefs = {"spat": pref_spat,
-                      "comp": 1 - pref_spat,
-                      "coast": pref_amen}
+        if self.model.buyer_util_method == "EU_v1":
+            self.prefs = {"spat": pref_spat,
+                          "comp": 1 - pref_spat,
+                          "coast": pref_amen}
+        else:
+            self.gamma = self.model.rng_init.normal(NEIGHBORHOOD_PREFS[0],
+                                                    NEIGHBORHOOD_PREFS[1])
+            self.prefs = {"age": 28.9,
+                          "house_size": 53.8,
+                          "lot_size": 0.1,
+                          "n_bedrooms": 0.3,
+                          "neighborhood": 16.9 * self.gamma}
 
         # Risk perception bias
         self.RP_bias = self.model.rng_init.normal(RP_bias[0], RP_bias[1])
@@ -109,58 +119,152 @@ class Household(Agent):
                                         loc=mean, scale=std,
                                         random_state=self.model.rng_init)
 
-    def compute_utility(self, prop, mode="EU"):
-        """Compute the utility of a certain property.
+    def compute_utility(self, properties, method):
+        """Compute the utility of the specified properties.
 
         Args:
-            prop (Parcel)        : Property to compute utility for
-            mode (string)        : Method for utility estimation.
+            properties (list)    : Properties to compute utility for
+            method (string)        : Method for utility estimation.
                                    Options:
-                                   "EU" = expected utility
+                                   "EU_v1" = Expected utility as described in
+                                             Filatova (2015)
+                                   "EU_v2" = Expected utility as described in
+                                             de Koning et al. (2016)
+                                   "PTnull" = Prospect Theory, baseline
+                                   "PT0" = Prospect Theory, RP = no floods
+                                   "PT1" = Prospect Theory, RP = single flood
+                                   "PT3" = Prospect Theory, RP = 3 floods
+                                   (PT functions based on de Koning et al. (2017))
         """
-        if mode == "EU":
-            # Compute housing goods as geometric avg of
-            # lot- and structure size (in feet)
-            spat_goods = math.sqrt(prop.lot_size * 43560 * prop.house_size)
-            
+
+        method = self.model.buyer_util_method
+        if method == "EU_v1":
+            # Compute spatial goods from lot- and structure size (in feet)
+            spat_goods = np.round(np.sqrt([prop.lot_size * prop.house_size * 43560
+                                           for prop in properties]), 3)
+            # Get travel costs from distance to Central Business District
+            TC = (np.array([prop.dist_CBD for prop in properties]) *
+                  self.model.trav_costs)
+            prop_prices = np.array([prop.price for prop in properties])
+
             # Compute composite goods
-            TC = self.model.trav_costs * prop.dist_CBD
-            comp_goods_nofl = (self.income - TC - prop.IP -
-                               prop.price/self.model.yM)
-            comp_goods_fl = (self.income - TC - prop.IP + prop.IC -
-                             self.model.F_flood_damage * prop.price -
-                             prop.price/self.model.yM)
+            comp_goods_nofl = self.income - TC - prop_prices/self.model.yM
+            comp_goods_fl = (self.income - TC - prop_prices/self.model.yM -
+                             self.model.F_flood_damage * prop_prices)
+            # Set negative composite goods to 1
+            comp_goods_nofl[comp_goods_nofl < 0] = 1
+            comp_goods_fl[comp_goods_fl < 0] = 1
 
-            # Avoid composite goods < 0
-            if comp_goods_fl < 0:
-                comp_goods_fl = 1
-            if comp_goods_nofl < 0:
-                comp_goods_nofl = 1
+            # Get proximity to coastal amenties
+            proxs_amen = np.array([prop.prox_amen for prop in properties])
 
-            # Compute utility in case of flood and in case of no flood
-            U_flood = (spat_goods**self.prefs["spat"] *
-                       comp_goods_fl**self.prefs["comp"] *
-                       prop.prox_amen**self.prefs["coast"])
-            U_no_flood = (spat_goods**self.prefs["spat"] *
-                          comp_goods_nofl**self.prefs["comp"] *
-                          prop.prox_amen**self.prefs["coast"])
+            # Compute expected utility in absence and in case of flooding
+            U_parcel = (spat_goods**self.prefs["spat"] *
+                        proxs_amen**self.prefs["coast"])
+            U_no_flood = U_parcel * comp_goods_nofl**self.prefs["comp"]
+            U_flood = U_parcel * comp_goods_fl**self.prefs["comp"]
+
+            # Get subjective risk perception for these properties
+            flood_probs = np.array([prop.flood_prob for prop in properties])
+            RP = np.clip(flood_probs + self.RP_bias, 0, 1)
 
             # Compute expected utility from U_flood and U_no_flood
-            flood_prob = (0.01 if prop.flood_prob_100 else 0.002
-                          if prop.flood_prob_500 else 0)
-            # When in flood plain: compute subjective risk perception
-            if flood_prob > 0:
-                RP = flood_prob + self.RP_bias
-                # Avoid values below 0 or above 1
-                if RP < 0:
-                    RP = 0
-                elif RP > 1:
-                    RP = 1
-            else:
-                RP = flood_prob
-            EU = (RP * U_flood + (1 - RP) * U_no_flood)
+            U = np.round(RP * U_flood + (1 - RP) * U_no_flood, -3)
 
-        return EU
+        else:
+            # Compute utility for this property as weighted function of normalized
+            # property characteristics (see de Koning et al., 2017 (Table 1))
+            chars = np.array([[prop.age_norm,
+                               prop.house_size_norm,
+                               prop.lot_size_norm,
+                               prop.n_bedrooms_norm,
+                               prop.resid_norm] for prop in properties])
+            U_houses = chars @ np.array(list(self.prefs.values()))
+            # Flood scenarios (N=0, N=1, N=2, N=3)
+            N_floods = np.array([0, 1, 2, 3])
+            # Flood probabilities for given properties
+            flood_probs = np.array([prop.P_floods for prop in properties])
+
+            if method == "EU_v2":
+                # Compute utilities for all flood scenarios
+                U_floods = (U_houses - 0.25 * np.outer(N_floods, U_houses)).T
+                # Utility is sum over flood scenarios weighed by their probability
+                U = np.sum(np.multiply(U_floods, flood_probs), axis=1)
+
+            elif method == "PTnull":
+                # Compute utility for all flood scenarios
+                U_floods = (U_houses - (0.25 * LOSS_AVERSION *
+                                        np.outer(N_floods, U_houses))).T
+                # Gamma parameter for subjective weighing of probabilities
+                gamma = np.ones((U_floods.shape)) * 0.65
+                # Lower gamma for gains, higher for losses
+                gamma[U_floods > 0] = 0.61
+                gamma[U_floods < 0] = 0.69
+                # Compute subjective weighted probability
+                weighted_probs = (flood_probs**gamma /
+                                  (flood_probs**gamma +
+                                   (1-flood_probs)**gamma)**(1/gamma))
+                # If P = 0, subjective weighted probability = 0
+                weighted_probs[flood_probs == 0] = 0
+                # Compute subjectively weighed utilities
+                U = np.sum(np.multiply(U_floods, weighted_probs), axis=1)
+
+            elif method == "PT0":
+                # Compute utility for all flood scenarios
+                U_floods = (-0.25 * LOSS_AVERSION * np.outer(N_floods, U_houses)).T
+                # No floods expected: gamma always lower than or equal to zero
+                gamma = np.ones((U_floods.shape)) * 0.65
+                gamma[U_floods < 0] = 0.69
+                # Compute subjective weighted probability
+                weighted_probs = (flood_probs**gamma /
+                                  (flood_probs**gamma +
+                                   (1-flood_probs)**gamma)**(1/gamma))
+                # If P = 0, subjective weighted probability = 0
+                weighted_probs[flood_probs == 0] = 0
+                # Compute subjectively weighed utilities
+                U = U_houses + np.sum(np.multiply(U_floods, weighted_probs), axis=1)
+
+            elif method == "PT1":
+                # Compute utility for all flood scenarios
+                U_floods = -0.25 * np.outer(N_floods, U_houses)
+                # Subtract flood scenario N=1 (reference point)
+                U_floods = (U_floods - U_floods[1,:]).T
+                # Only apply loss aversion to scenarios where loss is expected
+                U_floods[U_floods < 0] = U_floods[U_floods < 0] * LOSS_AVERSION
+                # No floods expected: gamma always lower than or equal to zero
+                gamma = np.ones((U_floods.shape)) * 0.65
+                gamma[U_floods > 0] = 0.61
+                gamma[U_floods < 0] = 0.69
+                # Compute subjective weighted probability
+                weighted_probs = (flood_probs**gamma /
+                                  (flood_probs**gamma +
+                                   (1-flood_probs)**gamma)**(1/gamma))
+                # If P = 0, subjective weighted probability = 0
+                weighted_probs[flood_probs == 0] = 0
+                # Compute subjectively weighed utilities
+                U = np.sum(np.multiply(U_floods, weighted_probs), axis=1)
+
+            elif method == "PT3":
+                # Compute utility for all flood scenarios
+                U_floods = -0.25 * np.outer(N_floods, U_houses)
+                # Subtract flood scenario N=1 (reference point)
+                U_floods = (U_floods - U_floods[3,:]).T
+                # Only apply loss aversion to scenarios where loss is expected
+                U_floods[U_floods < 0] = U_floods[U_floods < 0] * LOSS_AVERSION
+                # No floods expected: gamma always lower than or equal to zero
+                gamma = np.ones((U_floods.shape)) * 0.65
+                gamma[U_floods > 0] = 0.61
+                gamma[U_floods < 0] = 0.69
+                # Compute subjective weighted probability
+                weighted_probs = (flood_probs**gamma /
+                                  (flood_probs**gamma +
+                                   (1-flood_probs)**gamma)**(1/gamma))
+                # If P = 0, subjective weighted probability = 0
+                weighted_probs[flood_probs == 0] = 0
+                # Compute subjectively weighed utilities
+                U = np.sum(np.multiply(U_floods, weighted_probs), axis=1)
+
+        return U
 
     def check_lower_price(self):
         """Lower ask price for sellers with unsuccessful trade attempts. """
@@ -200,11 +304,11 @@ class Household(Agent):
         """
 
         # Compute expected utility for given properties
-        utils = {prop: round(self.compute_utility(prop), -3)
-                 for prop in properties}
+        utils = self.compute_utility(properties, self.model.buyer_util_method)
+        util_dict = {prop: U for prop, U in zip(properties, utils)}
         # Get property with highest utility
-        best_props = list(k for k, v in utils.items()
-                          if v == max(utils.values()))
+        best_props = list(prop for prop, U in util_dict.items()
+                          if U == max(util_dict.values()))
         # If multiple properties with highest utility: select cheapest
         if len(best_props) > 1:
             prices = {prop: prop.price for prop in best_props}

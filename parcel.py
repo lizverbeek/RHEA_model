@@ -9,13 +9,30 @@ Parcel class for the RHEA model.
 This class represents a parcel owned by a household agent in the RHEA model.
 Parcels are characterized from spatial input data.
 
-This file contains helper functions to get the parcel characteristics
-for the hedonic price analysis in the right format, and the set_insurance_values()
-function to compute insurance premiums and coverage for this specific parcel.
+This file contains helper functions to get the parcel characteristics for
+hedonic price analysis in the desired format for the specified price model.
 
 """
 
 import numpy as np
+
+from scipy.special import comb
+
+# Parcel characteristics for both price estimation methods (regression and kriging)
+# Please note that these names should correspond to the columns in the input file
+REGR_CHARS = ["AGE", "BATHROOMS", "HOUSESIZE","LOTSIZE", "NEWHOME", "POSTFIRM",
+              "FIRSTROW", "DISTAMEN", "DISTCBD", "DISTHWY", "DISTPARK"]
+KRIGING_CHARS = ["COORDS_X", "COORDS_Y", "AGE", "HOUSESIZE", "LOTSIZE", "BEDROOMS"]
+
+# Parcel characteristics used in buyer utility functions
+EU_V1_CHARS = ["PROXAMEN", "DISTCBD"]
+EU_V2_CHARS = PT_CHARS = ["AGEnorm", "HOUSESIZEnorm", "LOTSIZEnorm",
+                          "BEDROOMSnorm", "RESIDnorm"]
+
+# Other constants
+N_FLOODS = np.array([0,1,2,3])  # Flood experience scenarios (number of floods)
+RES_TIME = 10                   # Avg time households reside in the same house;
+                                # from de Koning et al. (2017)
 
 
 class Parcel():
@@ -26,41 +43,77 @@ class Parcel():
 
         Args:
             model           : RHEA_model containing the parcel
-            parcel_chars    : Parcel characteristics from input data
+            parcel_chars    : Parcel characteristics read from input data
         """
 
         self.model = model
         self.N_sales = 0
 
         # -- PARCEL CHARACTERISTICS -- #
-        # Extract relevant parcel characteristics (combined for all
-        # price estimation methods).
-        # Please note that the order of the columns in the provided
-        # CSV file should be equal to the order of variables given here
-        (self.unique_id, x, y, self.age, self.n_bathrooms, self.n_bedrooms,
-         self.house_size, self.lot_size, self.new_home, self.post_firm,
-         self.flood_prob_100, self.flood_prob_500,
-         self.coastal_front, self.prox_amen,
-         self.dist_amen, self.dist_CBD, self.dist_hwy, self.dist_park,
-         self.price) = parcel_chars.values
+        # Extract relevant parcel characteristics
+        self.unique_id, self.price = parcel_chars[["ID", "PRICE"]]
+        self.dflood_100 = parcel_chars.get("DFLOOD100")
+        self.dflood_500 = parcel_chars.get("DFLOOD500")
+        # Get flood probability from flood plain dummies
+        self.flood_prob = 0
+        if self.dflood_100:
+            # Check if 1:100 flood plain exists in dataset
+            self.flood_prob += 0.01 * self.dflood_100
+        if self.dflood_500:
+            # Check if 1:500 flood plain exists in dataset
+            self.flood_prob += 0.002 * self.dflood_500
 
-        # For regression kriging:
-        # Store parcel coordinates as tuple
-        self.coords = (x, y)
-        # Combine flood plain indicators
-        self.dflood = self.flood_prob_100 + self.flood_prob_500
-
-        # Compute insurance premium and coverage in case of flood
-        if self.model.insurance:
-            self.IP, self.IC = self.set_insurance_values()
+        # Read parcel characteristics for price estimation
+        if self.model.price_method == "Regression":
+            (self.age, self.n_bathrooms, self.house_size,
+             self.lot_size, self.new_home, self.post_firm,
+             self.coastal_front, self.dist_amen, self.dist_CBD,
+             self.dist_hwy, self.dist_park) = parcel_chars[REGR_CHARS]
+        elif self.model.price_method == "Regression kriging":
+            (x, y, self.age, self.house_size, self.lot_size,
+             self.n_bedrooms) = parcel_chars[KRIGING_CHARS]
+            self.coords = (x, y)
         else:
-            self.IP = self.IC = 0
+            raise ValueError("Invalid price method. Please specify "
+                             "'Regression' or 'Regression kriging'")
+
+        # Read attributes for utility function
+        util_method = self.model.buyer_util_method
+        if util_method == "EU_v1":
+            self.prox_amen, self.dist_CBD = parcel_chars[EU_V1_CHARS]
+        elif util_method == "EU_v2":
+            (self.age_norm, self.house_size_norm, self.lot_size_norm,
+             self.n_bedrooms_norm, self.resid_norm) = parcel_chars[EU_V2_CHARS]
+
+        elif util_method.startswith("PT"):
+            (self.age_norm, self.house_size_norm, self.lot_size_norm,
+             self.n_bedrooms_norm, self.resid_norm) = parcel_chars[PT_CHARS]
+            # Get probability of experiencing one or more floods during residence
+            self.P_floods = self.n_flood_prob()
+        else:
+            raise ValueError("Invalid buyer utility method. Please specify "
+                             "'EU_v1', 'EU_v2', 'PTnull', 'PT0', 'PT1' or 'PT3'")
+
+    def n_flood_prob(self, N_floods=N_FLOODS, res_time=RES_TIME):
+        """Computes probability of N floods occuring during a given number of years.
+        
+        Args:
+            N_floods (Vector)      : Number of flood occurences
+            res_time (int)         : Exp. avg. household residence time
+        Returns:
+            P_floods (list)        : Probability of flood occurences
+        """
+
+        P_floods = (self.flood_prob**N_floods *
+                    (1 - self.flood_prob)**(res_time - N_floods) *
+                    comb(res_time, N_floods))
+        return P_floods
 
     def get_prop_chars(self, method):
         """Get property characteristics used in hedonic price estimation.
         
         Args:
-            method                : Method used in hedonic function
+            method (string)       : Method used in hedonic function
                                     Options: "Regression" or "Regression kriging"
         Returns:
             prop_chars (list)     : List of hedonic function terms
@@ -74,8 +127,8 @@ class Parcel():
                           self.lot_size, self.lot_size**2,
                           self.new_home,
                           self.post_firm, 
-                          self.flood_prob_100,
-                          self.flood_prob_500,
+                          self.dflood_100,
+                          self.dflood_500,
                           self.coastal_front,
                           np.log(self.dist_amen),
                           np.log(self.dist_CBD),
@@ -88,31 +141,9 @@ class Parcel():
                           np.log(self.house_size),
                           np.log(self.lot_size),
                           self.n_bedrooms,
-                          self.dflood]
+                          np.ceil(self.flood_prob)]
 
         else:
-            raise ValueError("Invalid price method")
+            raise ValueError("Invalid price estimation method")
 
         return prop_chars
-
-    def set_insurance_values(self):
-        """Compute the annual insurance premium for a property based on
-           flood probability and property price.
-        
-        Returns:
-            IP (float)      : Insurance coverage in case of flood
-            IC (float)      : Insurance premium
-        """
-        if self.flood_prob_100:
-            IP = 526
-            if self.price * 0.8 >= 5e4:
-                IP += (0.8*self.price - 5e4) * 8e-4
-            IC = IP * 0.763
-        elif self.flood_prob_500:
-            IP = 326
-            if self.price * 0.8 >= 5e4:
-                IP += (0.8*self.price - 5e4) * 14e-4
-            IC = IP * 0.763
-        else:
-            IC = IP = 0
-        return IP, IC
