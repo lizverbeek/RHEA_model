@@ -35,7 +35,7 @@ Input parameters include:
   - `regression kriging`: Estimate property prices from historical transactions using kriging, following the approach in [[3]](#2)
 - `buyer_util_method`: Method to compute utility of properties for buyers to decide which property to bid on. Options:
   - `EU_v1`: expected utility based on preferences for spatial vs. composite goods and coastal amenities, following [[1]](#1).
-  - `EU_v2`: expected utility based on, following [[3]](#3).
+  - `EU_v2`: expected utility based on property age, house size, lot size, #bedrooms and neighborhood quality, following [[3]](#3).
   - `PTnull`: utility function based on Prospect Theory; baseline, as described in [[[3]](#3).
   - `PT0`: utility function based on Prospect Theory, where the reference point is no floods experienced during residence.
   - `PT1`: Prospect Theory; reference point = single flood experienced during residence.
