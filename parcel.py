@@ -19,10 +19,10 @@ import numpy as np
 from scipy.special import comb
 
 # Parcel characteristics for both price estimation methods (regression and kriging)
-# Please note that these names should correspond to the columns in the input file
-REGR_CHARS = ["AGE", "BATHROOMS", "HOUSESIZE","LOTSIZE", "NEWHOME", "POSTFIRM",
-              "FIRSTROW", "DISTAMEN", "DISTCBD", "DISTHWY", "DISTPARK"]
-KRIGING_CHARS = ["COORDS_X", "COORDS_Y", "AGE", "HOUSESIZE", "LOTSIZE", "BEDROOMS"]
+REGR_CHARS = ["AGE", "BATHROOMS", "HOUSESIZE", "LOTSIZE", "NEWHOME", "POSTFIRM",
+              "FIRSTROW", "DISTAMEN", "DISTCBD", "DISTHWY", "DISTPARK", "PRICE_REGR"]
+KRIGING_CHARS = ["COORDS_X", "COORDS_Y", "AGE", "HOUSESIZE", "LOTSIZE",
+                 "BEDROOMS", "PRICE_KRIGING"]
 
 # Parcel characteristics used in buyer utility functions
 EU_V1_CHARS = ["PROXAMEN", "DISTCBD"]
@@ -31,8 +31,6 @@ EU_V2_CHARS = PT_CHARS = ["AGEnorm", "HOUSESIZEnorm", "LOTSIZEnorm",
 
 # Other constants
 N_FLOODS = np.array([0,1,2,3])  # Flood experience scenarios (number of floods)
-RES_TIME = 10                   # Avg time households reside in the same house;
-                                # from de Koning et al. (2017)
 
 
 class Parcel():
@@ -51,7 +49,7 @@ class Parcel():
 
         # -- PARCEL CHARACTERISTICS -- #
         # Extract relevant parcel characteristics
-        self.unique_id, self.price = parcel_chars[["ID", "PRICE"]]
+        self.unique_id = parcel_chars["ID"]
         self.dflood_100 = parcel_chars.get("DFLOOD100")
         self.dflood_500 = parcel_chars.get("DFLOOD500")
         # Get flood probability from flood plain dummies
@@ -68,10 +66,10 @@ class Parcel():
             (self.age, self.n_bathrooms, self.house_size,
              self.lot_size, self.new_home, self.post_firm,
              self.coastal_front, self.dist_amen, self.dist_CBD,
-             self.dist_hwy, self.dist_park) = parcel_chars[REGR_CHARS]
+             self.dist_hwy, self.dist_park, self.price) = parcel_chars[REGR_CHARS]
         elif self.model.price_method == "Regression kriging":
             (x, y, self.age, self.house_size, self.lot_size,
-             self.n_bedrooms) = parcel_chars[KRIGING_CHARS]
+             self.n_bedrooms, self.price) = parcel_chars[KRIGING_CHARS]
             self.coords = (x, y)
         else:
             raise ValueError("Invalid price method. Please specify "
@@ -84,6 +82,8 @@ class Parcel():
         elif util_method == "EU_v2":
             (self.age_norm, self.house_size_norm, self.lot_size_norm,
              self.n_bedrooms_norm, self.resid_norm) = parcel_chars[EU_V2_CHARS]
+            # Get probability of experiencing one or more floods during residence
+            self.P_floods = self.n_flood_prob()
 
         elif util_method.startswith("PT"):
             (self.age_norm, self.house_size_norm, self.lot_size_norm,
@@ -94,16 +94,17 @@ class Parcel():
             raise ValueError("Invalid buyer utility method. Please specify "
                              "'EU_v1', 'EU_v2', 'PTnull', 'PT0', 'PT1' or 'PT3'")
 
-    def n_flood_prob(self, N_floods=N_FLOODS, res_time=RES_TIME):
+    def n_flood_prob(self, N_floods=N_FLOODS):
         """Computes probability of N floods occuring during a given number of years.
         
         Args:
             N_floods (Vector)      : Number of flood occurences
-            res_time (int)         : Exp. avg. household residence time
         Returns:
             P_floods (list)        : Probability of flood occurences
         """
 
+        # Compute (average) residence time from F_sale and length of timestep
+        res_time = 1/(self.model.kY * self.model.F_sale[0])
         P_floods = (self.flood_prob**N_floods *
                     (1 - self.flood_prob)**(res_time - N_floods) *
                     comb(res_time, N_floods))

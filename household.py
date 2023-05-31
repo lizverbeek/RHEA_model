@@ -402,10 +402,9 @@ class Household(Agent):
         buyer.market_status = "Inactive"
         buyer.moving_wait_time = self.model.not_moving_steps
 
-        # Sellers lave town with 70% probability, otherwise become buyers
+        # Sellers leave town with 70% probability, otherwise become buyers
         if self.model.rng.random() < self.model.F_leaving:
             self.model.remove_household(self)
-            del self
         else:
             self.market_status = "Buyer"
             # If seller stays: reset seller trade attributes
@@ -494,7 +493,6 @@ class Household(Agent):
         # Buyers leave market after predefined timelimit
         if self.market_status == "Buyer" and self.n_tr_nosuccess >= buyer_limit:
             self.model.remove_household(self)
-            del self
 
         # Sellers give up on selling after predefined timelimit
         elif (self.market_status == "Seller" and

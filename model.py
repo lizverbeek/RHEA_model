@@ -58,7 +58,7 @@ class RHEA_Model(Model):
 
     def __init__(self, random_seed, parcel_file, kY=2, F_sale=(0.25, 0.02),
                  HH_coastal_prefs=(0.5, 0.05), HH_RP_bias=(0, 0),
-                 update_hedonics=True, price_method="regression",
+                 update_hedonics=True, price_method="Regression",
                  buyer_util_method="EU_v1", seller_mode="Random"):
         """Initialization of the RHEA model.
 
@@ -75,7 +75,7 @@ class RHEA_Model(Model):
             update_hedonics (boolean)  : Indicates whether parameters of hedonic
                                          function are updated every timestep
             price_method (string)      : Method used in hedonic function
-                                         Options: "regression" or "Regression kriging"
+                                         Options: "Regression" or "Regression kriging"
             buyer_util_method (string) : Method for computing utility of buyers
                                          Options: "EU_v1", "EU_v2", "PTnull",
                                                   "PT0", "PT1", "PT3"
@@ -242,6 +242,7 @@ class RHEA_Model(Model):
         """Remove a household object from the model. """
         self.households.remove(hh)
         self.schedule.remove(hh)
+        del hh
 
     def update_parcel_age(self):
         """Update age of all parcels in the model. """
