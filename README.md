@@ -2,11 +2,7 @@
 
 ### Description
 Python replication of the Risks and Hedonics in Empirical Agent-based (RHEA) land market model.
-The RHEA model simulates the aggregated impact of household residential
-location choices under natural hazard risks. The model consists of realtor
-and household agents forming ask and bid prices from adaptive price
-expectations. Households are heterogeneous in income, risk perceptions and
-preferences for coastal amenities.
+The RHEA model simulates the aggregated impact of household residential location choices under natural hazard risks in the United States. The model consists of a realtor agent providing adaptive price expectations for selling household agents in the housing market. Buyers evaluate available properties based on their own preferences for property characteristics, (flood) risk perceptions and budget. The trade process is a double auction in which sellers and buyers negotiate on a transaction price based on their ask and bid prices, respectively.
 
 This implementation of the RHEA model is based on the original RHEA model written in NetLogo [[1]](#1) and on additional improvements on this model written in R [[2, 3, 4]](#2). The Python implementation is based on the original NetLogo and R source codes.
 
