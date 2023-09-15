@@ -34,7 +34,7 @@ from realtor import Realtor
 YEARS_MORTGAGE = 30         # Mortgage duration (years)
 TRAVEL_COSTS = 0.284        # Travel costs per unit of distance
 NEW_BUYER_COEF = 0.7        # Additional buyer/seller ratio parameter
-F_INCOME = 0.3              # Max fraction of income spent on housin
+F_INCOME = 0.3              # Max fraction of income spent on housing
 F_LEAVING = 0.7             # Fraction of sellers leaving area after sale
 F_FLOOD_DAMAGE = 0.15       # Percentage of house value damaged in case of flood
 MARKET_SUBSET = 5           # Subset size of properties seen by buyers
@@ -227,7 +227,7 @@ class RHEA_Model(Model):
             props = hh.get_affordable(props_avail, lower_limit=False)
             # If no properties available, reinitialize household
             while len(props) == 0:
-                self.households.remove(hh)
+                self.remove_household(hh)
                 hh = self.add_household()
                 props = hh.get_affordable(props_avail, lower_limit=False)
             # Randomly select property from affordable ones
@@ -294,7 +294,7 @@ class RHEA_Model(Model):
         for hh in sellers:
             hh.market_status = "Seller"
 
-        # Return properties for sale
+        # Return sellers
         return sellers
 
     def create_new_buyers(self, F_buyers):

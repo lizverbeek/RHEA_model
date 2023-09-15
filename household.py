@@ -465,7 +465,6 @@ class Household(Agent):
 
         if self.market_status == "Seller":
             # Check if seller received any bids
-            self.bids_received = self.bids_received
             if self.bids_received:
                 # Get highest bid and bidder, register others as unsuccessful
                 highest_bidder = max(self.bids_received,
@@ -473,11 +472,9 @@ class Household(Agent):
                 highest_bid = self.bids_received.pop(highest_bidder)
                 for buyer in self.bids_received.keys():
                     buyer.n_tr_nosuccess += 1
-                id_hist = self.unique_id
                 # Start negotiation between seller and highest bidder
                 self.negotiation(highest_bidder, highest_bid)
-
-            # If no bids are placed, register as unsuccessful for seller
+            # If no bids are received, register as unsuccessful for seller
             else:
                 self.n_tr_nosuccess += 1
 
